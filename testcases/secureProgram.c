@@ -14,6 +14,31 @@ struct ThingB {
     int (*func)(const char *);
 };
     
+void test() {
+    struct ThingA* objs[10] = {0};
+    free(objs[5]);
+    objs[5] = NULL;
+}
+
+struct Test_2 {
+    struct ThingA* test;
+};
+
+void test2() {
+    struct Test_2 test = {0};
+    free(test.test);
+    test.test = NULL;
+}
+
+struct Test_3 {
+    struct ThingA* test;
+};
+
+void test3() {
+    struct Test_3* test = malloc(sizeof(struct Test_3));
+    free(test->test);
+    test->test = NULL;
+}
 
 void notUsedAfterFree() {
     struct ThingA* obj1 = NULL;

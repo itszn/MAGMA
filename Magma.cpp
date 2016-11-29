@@ -9,12 +9,94 @@
 using namespace llvm;
 
 namespace {
+
+    struct NullFreeFinderPass: public FunctionPass {
+        NullFreeFinderPass(char ID) : FunctionPass(ID) {}
+
+        bool compareInstructionAsUsers(Instruction* a, Instruction* b, int limit=10) {
+            if (limit == 0)
+                return false;
+            errs() << "comparing " << *a << " to " << *b << "\n";
+            if (a==b) {
+                return true;
+            }
+            if (a->getOpcodeName() != b->getOpcodeName())
+                return false;
+            if (a->getNumOperands() != b->getNumOperands())
+                return false;
+
+            for (User::op_iterator i = a->op_begin(), j = b->op_begin();
+                    i != a->op_end() && j != b->op_end(); i++, j++) {
+                Instruction* ii = dyn_cast<Instruction>(*i);
+                Instruction* ij = dyn_cast<Instruction>(*j);
+
+                if (ii && ij) {
+                    if (!compareInstructionAsUsers(ii, ij, limit-1))
+                        return false;
+                } else if (*i != *j)
+                    return false;
+
+            }
+            return true;
+
+        }
+
+        bool runOnFunction(Function &F) override {
+            std::vector<Instruction*> freed;
+            std::vector<Instruction*> toRemove;
+
+            for (auto &block : F) {
+                for (auto &inst : block) {
+                    if (CallInst* I = dyn_cast<CallInst>(&inst)) {
+
+                        if (I->getCalledFunction() && I->getCalledFunction()->getName() == "free") {
+                            errs() << *I << "\n";
+                            errs() << *I->getArgOperand(0) << "\n";
+                            Value* ptr = I->getArgOperand(0);
+                            if (Instruction* bitcast = dyn_cast<Instruction>(ptr)) {
+                                if (Instruction* load = dyn_cast<Instruction>(bitcast->getOperand(0))) {
+                                    errs() << "Freed " << *load->getOperand(0) << "\n";
+                                    if (Instruction* realVal = dyn_cast<Instruction>(load->getOperand(0)))
+                                        freed.push_back(realVal);
+                                }
+                            }
+                        }
+                    }
+                    if (StoreInst* I = dyn_cast<StoreInst>(&inst)) {
+                        errs() << *I << "\n";
+                        if (Instruction* realVal = dyn_cast<Instruction>(I->getOperand(1))) {
+                            for (int i=0; i<freed.size(); i++) {
+                                if (compareInstructionAsUsers(freed[i], realVal)) {
+                                    freed.erase(find(freed.begin(), freed.end(), freed[i]));
+                                    errs() << *I->getOperand(0) << "\n";
+                                    if (isa<ConstantPointerNull>(I->getOperand(0))) {
+                                        errs() << "NULL\n";
+                                        toRemove.push_back(I);
+                                    }
+
+                                    break;
+                                }
+
+                            }
+                        }
+                    }
+                }
+            }
+            errs() << "got to here\n";
+            for (int i=0; i< toRemove.size(); i++)
+                toRemove[i]->eraseFromParent();
+            return true;
+        }
+    };
+
+
+
     struct MemPermsPass : public InstVisitor<MemPermsPass> {
         MemPermsPass() {}
 
         virtual void visitCallInst(CallInst &I) {
-            if (I.getCalledFunction() && I.getCalledFunction()->getName() == "mmap" ||
-                    I.getCalledFunction() && I.getCalledFunction()->getName() == "mprotect") {
+            if (I.getCalledFunction() && (I.getCalledFunction()->getName() == "mmap" ||
+                    I.getCalledFunction()->getName() == "mprotect")) {
                 Value* op2 = I.getArgOperand(2);
                 if (isa<ConstantInt>(op2)) {
                     I.setArgOperand(2, ConstantInt::get(op2->getType(),7));
@@ -37,9 +119,6 @@ namespace {
                     GlobalVariable * g = dyn_cast<GlobalVariable>(op0);
                     StringRef val = dyn_cast<ConstantDataSequential>(g->getInitializer())->getAsCString();
 
-                    for (User::op_iterator i = I.op_begin(); i != I.op_end(); i++) {
-                        errs() << " " << **i << "\n";
-                    }
 
                     bool found = false;
                     User::op_iterator opiter = I.op_begin()+1;
@@ -78,9 +157,8 @@ namespace {
                         for(; opiter!=I.op_end(); opiter++)
                             args.push_back(*opiter);
                         ArrayRef<Value*> args_a(args);
-                        CallInst::Create(I.getCalledFunction(), args_a, "", &I);
-                        // Remove the real prinf
-                        I.eraseFromParent();
+                        CallInst* last = CallInst::Create(I.getCalledFunction(), args_a, "");
+                        ReplaceInstWithInst(&I, last);
                     }
                 }
             }
@@ -88,13 +166,68 @@ namespace {
         }
     };
 
+    struct GetsPass : public InstVisitor<GetsPass>
+    {
+        GetsPass() {}
+
+        virtual void visitCallInst(CallInst &I)
+        {
+            if (I.getCalledFunction() && I.getCalledFunction()->getName()=="fgets")
+            {
+                Value * op2 = I.getArgOperand(2)->stripPointerCasts();
+                LoadInst * op2inst = dyn_cast<LoadInst>(op2);
+                if (op2inst->getPointerOperand()->stripPointerCasts() && op2inst->getPointerOperand()->stripPointerCasts()->getName() == "stdin")
+                {
+                    //CallInst * c = CallInst::create();
+                }
+            }
+        }
+    };
+
+    struct VolatilePass : public InstVisitor<VolatilePass>
+    {
+        VolatilePass() {}
+
+        virtual void visitLoadInst(LoadInst & I) { if (I.isVolatile()) I.setVolatile(0); }
+        virtual void visitStoreInst(StoreInst & I) { if (I.isVolatile()) I.setVolatile(0); }
+        virtual void visitAtomicCmpXchgInst(AtomicCmpXchgInst &I) { if (I.isVolatile()) I.setVolatile(0); }
+        virtual void visitMemIntrinsic(MemIntrinsic &I) { if (I.isVolatile()) I.setVolatile(0); }
+    };
+
+    struct OffByOnePass : public InstVisitor<OffByOnePass>
+    {
+        OffByOnePass() {}
+
+        virtual void visitICmpInst(CmpInst & I)
+        {
+            CmpInst::Predicate pred = I.getPredicate();
+            switch(pred)
+            {
+                case CmpInst::Predicate::ICMP_ULT:
+                    pred = CmpInst::Predicate::ICMP_ULE;
+                    break;
+                case CmpInst::Predicate::ICMP_SLT:
+                    pred = CmpInst::Predicate::ICMP_SLE;
+                    break;
+                default:
+                    break;
+            }
+
+            I.setPredicate(pred);
+        }
+    };
+
     struct Magma: public FunctionPass {
         static char ID;
         Magma() : FunctionPass(ID) {}
 
+        void remove_stack_canary(Function &F)
+        {
+            StringRef attr = "stack-protector-buffer-size";
+            if (F.hasFnAttribute(attr)) F.addFnAttr(attr);
+        }
 
         bool runOnFunction(Function &F) override {
-            errs() << "start\n";
 
             FmtPass fmt;
             //fmt.visit(F);
@@ -102,9 +235,25 @@ namespace {
             MemPermsPass mpp;
             mpp.visit(F);
 
+            GetsPass gets;
+            gets.visit(F);
+
+            VolatilePass vol;
+            vol.visit(F);
+
+            OffByOnePass off;
+            off.visit(F);
+
+            remove_stack_canary(F);
+
+            NullFreeFinderPass nffp(ID);
+            nffp.runOnFunction(F);
+
             return true;
         }
     };
 }
+
 char Magma::ID = 0;
 static RegisterPass<Magma> X("magma", "magma pass", false, false);
+
