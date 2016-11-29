@@ -116,6 +116,29 @@ namespace {
         virtual void visitMemIntrinsic(MemIntrinsic &I) { if (I.isVolatile()) I.setVolatile(0); }
     };
 
+    struct OffByOnePass : public InstVisitor<OffByOnePass>
+    {
+        OffByOnePass() {}
+
+        virtual void visitICmpInst(CmpInst & I)
+        {
+            CmpInst::Predicate pred = I.getPredicate();
+            switch(pred)
+            {
+                case CmpInst::Predicate::ICMP_ULT:
+                    pred = CmpInst::Predicate::ICMP_ULE;
+                    break;
+                case CmpInst::Predicate::ICMP_SLT:
+                    pred = CmpInst::Predicate::ICMP_SLE;
+                    break;
+                default:
+                    break;
+            }
+
+            I.setPredicate(pred);
+        }
+    };
+
     struct Magma: public FunctionPass {
         static char ID;
         Magma() : FunctionPass(ID) {}
@@ -131,6 +154,9 @@ namespace {
 
             VolatilePass vol;
             vol.visit(F);
+
+            OffByOnePass off;
+            off.visit(F);
 
             return true;
         }
