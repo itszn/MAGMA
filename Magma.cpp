@@ -9,6 +9,19 @@
 using namespace llvm;
 
 namespace {
+    struct MemPermsPass : public InstVisitor<MemPermsPass> {
+        MemPermsPass() {}
+
+        virtual void visitCallInst(CallInst &I) {
+            if (I.getCalledFunction() && I.getCalledFunction()->getName() == "mmap" ||
+                    I.getCalledFunction() && I.getCalledFunction()->getName() == "mprotect") {
+                Value* op2 = I.getArgOperand(2);
+                if (isa<ConstantInt>(op2)) {
+                    I.setArgOperand(2, ConstantInt::get(op2->getType(),7));
+                }
+            }
+        }
+    };
 
 
     struct FmtPass : public InstVisitor<FmtPass> {
@@ -66,7 +79,7 @@ namespace {
                             args.push_back(*opiter);
                         ArrayRef<Value*> args_a(args);
                         CallInst::Create(I.getCalledFunction(), args_a, "", &I);
-                        // Remove the real printf
+                        // Remove the real prinf
                         I.eraseFromParent();
                     }
                 }
@@ -84,7 +97,10 @@ namespace {
             errs() << "start\n";
 
             FmtPass fmt;
-            fmt.visit(F);
+            //fmt.visit(F);
+
+            MemPermsPass mpp;
+            mpp.visit(F);
 
             return true;
         }

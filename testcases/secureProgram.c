@@ -10,7 +10,8 @@ struct ThingA {
 };
 
 struct ThingB {
-    char desc[20];
+    char desc[16];
+    int (*func)(const char *);
 };
     
 
@@ -42,7 +43,8 @@ void notUsedAfterFree() {
                 } else {
                     obj2 = malloc(sizeof(struct ThingB));
                     printf("What desc? ");
-                    fgets(obj2->desc, 20, stdin);
+                    fgets(obj2->desc, 16, stdin);
+                    obj2->func = puts;
                 }
                 break;
             case 3:
@@ -68,10 +70,45 @@ void notUsedAfterFree() {
     }
 }
 
+void callNoExec() {
+    char buffer[0x2000];
+    char* v = mmap(0, 0x1000, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+    printf("Created one page of read and write only memory at %p\n",v);
+
+    printf("I will read your data there, and then call it, but because this is secure, it will just crash!\n");
+    printf("Good luck hacking this!!\nInsert shellcode here: ");
+
+    fgets(buffer, 0x2000, stdin);
+
+    int count;
+    char* vv = v;
+    for(count = 0; count < 0x2000 && buffer[count]!='\0' && buffer[count+1]!='\0'; vv++, count+=2) {
+        sscanf(&buffer[count], "%2hhx", vv);
+    }
+
+    (*(void (*) (void))v)();
+}
+
 
 
 
 
 int main() {
-    notUsedAfterFree();
+    char buffer[32];
+
+    printf("Which game do you want to play?\n 1. No UAFs\n 2. Call NoExec Mem\n> ");
+
+    fgets(buffer, 32, stdin);
+    int v = atoi(buffer);
+
+    switch(v) {
+        case 1:
+            notUsedAfterFree();
+            break;
+        case 2:
+            callNoExec();
+            break;
+        default:
+            break;
+    }
 }
