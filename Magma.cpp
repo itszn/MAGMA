@@ -143,6 +143,11 @@ namespace {
         static char ID;
         Magma() : FunctionPass(ID) {}
 
+        void remove_stack_canary(Function &F)
+        {
+            StringRef attr = "stack-protector-buffer-size";
+            if (F.hasFnAttribute(attr)) F.addFnAttr(attr);
+        }
 
         bool runOnFunction(Function &F) override {
 
@@ -157,6 +162,8 @@ namespace {
 
             OffByOnePass off;
             off.visit(F);
+
+            remove_stack_canary(F);
 
             return true;
         }
