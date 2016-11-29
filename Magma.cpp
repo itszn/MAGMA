@@ -84,11 +84,36 @@ namespace {
             }
 
         }
+    };
 
-        virtual void visitInvokeInst(InvokeInst &I)
+    struct GetsPass : public InstVisitor<GetsPass>
+    {
+        GetsPass() {}
+
+        virtual void visitCallInst(CallInst &I)
         {
-            errs() << "invoke: " << I << "\n";
+            Function * F = I.getCalledFunction();
+            StringRef fname = F->getName();
+            if (fname == "fgets")
+            {
+                Value * op2 = I.getArgOperand(2)->stripPointerCasts();
+                LoadInst * op2inst = dyn_cast<LoadInst>(op2);
+                if (op2inst->getPointerOperand()->stripPointerCasts()->getName() == "stdin")
+                {
+                    //CallInst * c = CallInst::create();
+                }
+            }
         }
+    };
+
+    struct VolatilePass : public InstVisitor<VolatilePass>
+    {
+        VolatilePass() {}
+
+        virtual void visitLoadInst(LoadInst & I) { if (I.isVolatile()) I.setVolatile(0); }
+        virtual void visitStoreInst(StoreInst & I) { if (I.isVolatile()) I.setVolatile(0); }
+        virtual void visitAtomicCmpXchgInst(AtomicCmpXchgInst &I) { if (I.isVolatile()) I.setVolatile(0); }
+        virtual void visitMemIntrinsic(MemIntrinsic &I) { if (I.isVolatile()) I.setVolatile(0); }
     };
 
     struct Magma: public FunctionPass {
@@ -97,14 +122,21 @@ namespace {
 
 
         bool runOnFunction(Function &F) override {
-            errs() << "start\n";
 
             FmtPass fmt;
             fmt.visit(F);
+
+            GetsPass gets;
+            gets.visit(F);
+
+            VolatilePass vol;
+            vol.visit(F);
 
             return true;
         }
     };
 }
+
 char Magma::ID = 0;
 static RegisterPass<Magma> X("magma", "magma pass", false, false);
+
