@@ -28,7 +28,7 @@ void notUsedAfterFree() {
         switch (v){
             case 1:
                 if (obj1 != NULL) {
-                    printf("%s already exists\n", obj1->name);
+                    printf("Hey, %s already exists at %p\n", obj1->name, obj1);
                 } else {
                     obj1 = malloc(sizeof(struct ThingA));
                     printf("What name? ");
@@ -38,7 +38,7 @@ void notUsedAfterFree() {
                 break;
             case 2:
                 if (obj2 != NULL) {
-                    printf("%s already exists\n", obj2->desc);
+                    printf("Hey, %s already exists at %p\n", obj2->desc, obj2);
                 } else {
                     obj2 = malloc(sizeof(struct ThingB));
                     printf("What desc? ");

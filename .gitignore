@@ -1,2 +1,4 @@
 CMakeLists.txt
 *.swp
+*.ll
+testcases/secureProgram
