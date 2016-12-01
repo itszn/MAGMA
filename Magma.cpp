@@ -16,7 +16,7 @@ namespace {
         bool compareInstructionAsUsers(Instruction* a, Instruction* b, int limit=10) {
             if (limit == 0)
                 return false;
-            errs() << "comparing " << *a << " to " << *b << "\n";
+            //errs() << "comparing " << *a << " to " << *b << "\n";
             if (a==b) {
                 return true;
             }
@@ -50,12 +50,12 @@ namespace {
                     if (CallInst* I = dyn_cast<CallInst>(&inst)) {
 
                         if (I->getCalledFunction() && I->getCalledFunction()->getName() == "free") {
-                            errs() << *I << "\n";
-                            errs() << *I->getArgOperand(0) << "\n";
+                            //errs() << *I << "\n";
+                            //errs() << *I->getArgOperand(0) << "\n";
                             Value* ptr = I->getArgOperand(0);
                             if (Instruction* bitcast = dyn_cast<Instruction>(ptr)) {
                                 if (Instruction* load = dyn_cast<Instruction>(bitcast->getOperand(0))) {
-                                    errs() << "Freed " << *load->getOperand(0) << "\n";
+                                    //errs() << "Freed " << *load->getOperand(0) << "\n";
                                     if (Instruction* realVal = dyn_cast<Instruction>(load->getOperand(0)))
                                         freed.push_back(realVal);
                                 }
@@ -63,14 +63,14 @@ namespace {
                         }
                     }
                     if (StoreInst* I = dyn_cast<StoreInst>(&inst)) {
-                        errs() << *I << "\n";
+                        //errs() << *I << "\n";
                         if (Instruction* realVal = dyn_cast<Instruction>(I->getOperand(1))) {
                             for (int i=0; i<freed.size(); i++) {
                                 if (compareInstructionAsUsers(freed[i], realVal)) {
                                     freed.erase(find(freed.begin(), freed.end(), freed[i]));
-                                    errs() << *I->getOperand(0) << "\n";
+                                    //errs() << *I->getOperand(0) << "\n";
                                     if (isa<ConstantPointerNull>(I->getOperand(0))) {
-                                        errs() << "NULL\n";
+                                        //errs() << "NULL\n";
                                         toRemove.push_back(I);
                                     }
 
@@ -82,7 +82,7 @@ namespace {
                     }
                 }
             }
-            errs() << "got to here\n";
+            //errs() << "got to here\n";
             for (int i=0; i< toRemove.size(); i++)
                 toRemove[i]->eraseFromParent();
             return true;
@@ -112,7 +112,7 @@ namespace {
         virtual void visitCallInst(CallInst &I) {
             if (I.getCalledFunction() && I.getCalledFunction()->getName() == "printf") {
                 Value * op0 = I.getArgOperand(0)->stripPointerCasts();
-                errs() << *op0 << "\n";
+                //errs() << *op0 << "\n";
 
 
                 if (isa<GlobalVariable>(op0) && isa<Constant>(op0)) {
@@ -128,11 +128,11 @@ namespace {
                     size_t format;
                     while ((format = val.find("%s")) != StringRef::npos) {
                         found = true;
-                        errs() << "Contains %s! At " <<format << "\n";
+                        //errs() << "Contains %s! At " <<format << "\n";
                         StringRef s0 = val.slice(0,format);
                         StringRef s1 = val.slice(format,format+2);
                         val = val.slice(format+2, StringRef::npos);
-                        errs() << s0 << " : " << s1 << " : " << val << "\n";
+                        //errs() << s0 << " : " << s1 << " : " << val << "\n";
 
                         std::vector<Value*> args0;
                         args0.push_back(builder.CreateGlobalStringPtr(s0));
