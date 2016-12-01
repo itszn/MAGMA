@@ -9,6 +9,9 @@
 using namespace llvm;
 
 namespace {
+    Function * magma_strlen;
+    Function * magma_gets;
+    Function * magma_rgets;
 
     struct NullFreeFinderPass: public FunctionPass {
         NullFreeFinderPass(char ID) : FunctionPass(ID) {}
@@ -179,6 +182,8 @@ namespace {
             Function * gets_func = cast<Function>(gets_func_const);
 
             Function * F = I.getCalledFunction();
+            if (!F) return;
+
             StringRef fname = F->getName();
             if (fname == "fgets")
             {
@@ -195,7 +200,7 @@ namespace {
             {
                 Value * op0 = I.getArgOperand(0)->stripPointerCasts();
                 errs() << *op0 << "\n";
-                if (dyn_cast<ConstantInt>(op0)->isZero() && 0)
+                if (dyn_cast<ConstantInt>(op0)->isZero() && 1)
                 {
                     Value * new_args[] = {I.getArgOperand(1)};
                     CallInst * c = CallInst::Create(gets_func, ArrayRef<Value*>(new_args, 1), "");
@@ -275,8 +280,47 @@ namespace {
             return true;
         }
     };
+
+    struct MagmaMod : public ModulePass
+    {
+        static char ID;
+        MagmaMod() : ModulePass(ID) {}
+
+        bool runOnModule(Module & M)
+        {
+            Type * int8_type = Type::getInt8PtrTy(M.getContext());
+            Type * gets_args[] = {int8_type};
+            FunctionType * gets_type = FunctionType::get(int8_type, ArrayRef<Type*>(gets_args, 1), 0);
+            Constant * const_gets_func = M.getOrInsertFunction("gets", gets_type);
+            magma_gets = cast<Function>(const_gets_func);
+
+            Type * int64_type = Type::getInt64Ty(M.getContext());
+            FunctionType * strlen_type = FunctionType::get(int64_type, ArrayRef<Type*>(gets_args, 1), 0);
+            Constant * const_strlen_func = M.getOrInsertFunction("strlen", strlen_type);
+            magma_strlen = cast<Function>(const_strlen_func);
+
+            FunctionType * rgets_type = FunctionType::get(int64_type, ArrayRef<Type*>(gets_args, 1), 0);
+            Constant * const_rgets_func = M.getOrInsertFunction("magma_rgets", rgets_type);
+            magma_rgets = cast<Function>(const_rgets_func);
+
+            Value * rgets_args[] = {&*magma_rgets->arg_begin()};
+
+            BasicBlock * bb = BasicBlock::Create(M.getContext(), "entry", magma_rgets);
+            IRBuilder<> builder(bb);
+            builder.CreateCall(magma_gets, ArrayRef<Value*>(rgets_args, 1), "entry");
+            Value * gets_len = builder.CreateCall(magma_strlen, ArrayRef<Value*>(rgets_args, 1), "entry");
+            builder.CreateRet(gets_len);
+
+            Magma fp;
+            for (Function & F : M) fp.runOnFunction(F);
+
+            return true;
+        }
+
+    };
 }
 
 char Magma::ID = 0;
-static RegisterPass<Magma> X("magma", "magma pass", false, false);
+char MagmaMod::ID = 0;
+static RegisterPass<MagmaMod> X("magma", "magma pass", false, false);
 
