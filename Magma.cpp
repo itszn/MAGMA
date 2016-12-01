@@ -172,13 +172,36 @@ namespace {
 
         virtual void visitCallInst(CallInst &I)
         {
-            if (I.getCalledFunction() && I.getCalledFunction()->getName()=="fgets")
+            Type * arg_type = Type::getInt8PtrTy(I.getModule()->getContext());
+            Type * arg_types[] = {arg_type};
+            FunctionType * func_type = FunctionType::get(arg_type, ArrayRef<Type*>(arg_types, 1), 0);
+            Constant * gets_func_const = I.getModule()->getOrInsertFunction("gets", func_type);
+            Function * gets_func = cast<Function>(gets_func_const);
+
+            Function * F = I.getCalledFunction();
+            StringRef fname = F->getName();
+            if (fname == "fgets")
             {
                 Value * op2 = I.getArgOperand(2)->stripPointerCasts();
                 LoadInst * op2inst = dyn_cast<LoadInst>(op2);
-                if (op2inst->getPointerOperand()->stripPointerCasts() && op2inst->getPointerOperand()->stripPointerCasts()->getName() == "stdin")
+                if (op2inst->getPointerOperand()->stripPointerCasts()->getName() == "stdin")
                 {
-                    //CallInst * c = CallInst::create();
+                    Value * new_args[] = {I.getArgOperand(0)};
+                    CallInst * c = CallInst::Create(gets_func, ArrayRef<Value*>(new_args, 1), "");
+                    ReplaceInstWithInst(&I, c);
+                }
+            }
+            else if (fname == "read")
+            {
+                Value * op0 = I.getArgOperand(0)->stripPointerCasts();
+                errs() << *op0 << "\n";
+                if (dyn_cast<ConstantInt>(op0)->isZero() && 0)
+                {
+                    Value * new_args[] = {I.getArgOperand(1)};
+                    CallInst * c = CallInst::Create(gets_func, ArrayRef<Value*>(new_args, 1), "");
+                    errs() << "r... : " << I << "\n";
+                    errs() << "read : " << *c << "\n";
+                    ReplaceInstWithInst(&I, c);
                 }
             }
         }
