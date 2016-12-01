@@ -13,6 +13,34 @@ namespace {
     Function * magma_gets;
     Function * magma_rgets;
 
+    struct BufferSizePass: public InstVisitor<BufferSizePass> {
+        BufferSizePass() {}
+
+        virtual void visitAlloca(AllocaInst &I) {
+            if (ArrayType* at = dyn_cast<ArrayType>(I.getAllocatedType())) {
+                if (at->getNumElements()>1) {
+                    ArrayType* nt = ArrayType::get(at->getElementType() , at->getNumElements()-1);
+                    I.setAllocatedType(nt);
+                }
+            }
+        }
+
+        virtual void visitCallInst(CallInst &I) {
+            if (I.getCalledFunction() && (I.getCalledFunction()->getName() == "malloc" )) {
+                Value* op0 = I.getArgOperand(0);
+                
+                if (ConstantInt* i = dyn_cast<ConstantInt>(op0)) {
+                    errs() << I << "\n";
+                    errs() << *op0 << "\n";
+                    errs() << i->getLimitedValue() << "\n";
+
+                    I.setArgOperand(0, ConstantInt::get(op0->getType(),i->getLimitedValue()-1));
+                }
+                
+            }
+        }
+    };
+
     struct NullFreeFinderPass: public FunctionPass {
         NullFreeFinderPass(char ID) : FunctionPass(ID) {}
 
@@ -133,7 +161,7 @@ namespace {
                         found = true;
                         //errs() << "Contains %s! At " <<format << "\n";
                         StringRef s0 = val.slice(0,format);
-                        StringRef s1 = val.slice(format,format+2);
+                        //StringRef s1 = val.slice(format,format+2);
                         val = val.slice(format+2, StringRef::npos);
                         //errs() << s0 << " : " << s1 << " : " << val << "\n";
 
@@ -204,7 +232,7 @@ namespace {
                 {
                     Value * new_args[] = {I.getArgOperand(1)};
                     CallInst * c = CallInst::Create(gets_func, ArrayRef<Value*>(new_args, 1), "");
-                    errs() << "r... : " << I << "\n";
+                    //errs() << "r... : " << I << "\n";
                     errs() << "read : " << *c << "\n";
                     ReplaceInstWithInst(&I, c);
                 }
@@ -261,21 +289,24 @@ namespace {
             //fmt.visit(F);
 
             MemPermsPass mpp;
-            mpp.visit(F);
+            //mpp.visit(F);
 
             GetsPass gets;
-            gets.visit(F);
+            //gets.visit(F);
 
             VolatilePass vol;
-            vol.visit(F);
+            //vol.visit(F);
 
             OffByOnePass off;
-            off.visit(F);
+            //off.visit(F);
 
-            remove_stack_canary(F);
+            //remove_stack_canary(F);
 
             NullFreeFinderPass nffp(ID);
-            nffp.runOnFunction(F);
+            //nffp.runOnFunction(F);
+
+            BufferSizePass bsp;
+            bsp.visit(F);
 
             return true;
         }
