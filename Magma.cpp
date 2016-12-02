@@ -203,12 +203,6 @@ namespace {
 
         virtual void visitCallInst(CallInst &I)
         {
-            Type * arg_type = Type::getInt8PtrTy(I.getModule()->getContext());
-            Type * arg_types[] = {arg_type};
-            FunctionType * func_type = FunctionType::get(arg_type, ArrayRef<Type*>(arg_types, 1), 0);
-            Constant * gets_func_const = I.getModule()->getOrInsertFunction("gets", func_type);
-            Function * gets_func = cast<Function>(gets_func_const);
-
             Function * F = I.getCalledFunction();
             if (!F) return;
 
@@ -220,7 +214,7 @@ namespace {
                 if (op2inst->getPointerOperand()->stripPointerCasts()->getName() == "stdin")
                 {
                     Value * new_args[] = {I.getArgOperand(0)};
-                    CallInst * c = CallInst::Create(gets_func, ArrayRef<Value*>(new_args, 1), "");
+                    CallInst * c = CallInst::Create(magma_gets, ArrayRef<Value*>(new_args, 1), "");
                     ReplaceInstWithInst(&I, c);
                 }
             }
@@ -231,9 +225,7 @@ namespace {
                 if (dyn_cast<ConstantInt>(op0)->isZero() && 1)
                 {
                     Value * new_args[] = {I.getArgOperand(1)};
-                    CallInst * c = CallInst::Create(gets_func, ArrayRef<Value*>(new_args, 1), "");
-                    //errs() << "r... : " << I << "\n";
-                    errs() << "read : " << *c << "\n";
+                    CallInst * c = CallInst::Create(magma_rgets, ArrayRef<Value*>(new_args, 1), "");
                     ReplaceInstWithInst(&I, c);
                 }
             }
@@ -292,7 +284,7 @@ namespace {
             //mpp.visit(F);
 
             GetsPass gets;
-            //gets.visit(F);
+            gets.visit(F);
 
             VolatilePass vol;
             //vol.visit(F);
@@ -302,11 +294,11 @@ namespace {
 
             //remove_stack_canary(F);
 
-            NullFreeFinderPass nffp(ID);
+            //NullFreeFinderPass nffp(ID);
             //nffp.runOnFunction(F);
 
             BufferSizePass bsp;
-            bsp.visit(F);
+            //bsp.visit(F);
 
             return true;
         }
