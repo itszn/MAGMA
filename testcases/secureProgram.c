@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <unistd.h>
 
 
 
@@ -40,6 +41,11 @@ void test3() {
     test->test = NULL;
 }
 
+void test4() {
+    char buff[100];
+    int i = read(0, buff, 100);
+}
+
 void notUsedAfterFree() {
     struct ThingA* obj1 = NULL;
     struct ThingB* obj2 = NULL;
@@ -54,7 +60,7 @@ void notUsedAfterFree() {
         switch (v){
             case 1:
                 if (obj1 != NULL) {
-                    printf("Hey, %s already exists at %p\n", obj1->name, obj1);
+                    fprintf(stdout,"Hey, %s already exists at %p\n", obj1->name, obj1);
                 } else {
                     obj1 = malloc(sizeof(struct ThingA));
                     printf("What name? ");

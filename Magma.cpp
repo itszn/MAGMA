@@ -6,6 +6,10 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
+#include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/PassRegistry.h"
+
 using namespace llvm;
 
 namespace {
@@ -141,18 +145,23 @@ namespace {
         FmtPass() {}
 
         virtual void visitCallInst(CallInst &I) {
-            if (I.getCalledFunction() && I.getCalledFunction()->getName() == "printf") {
-                Value * op0 = I.getArgOperand(0)->stripPointerCasts();
-                //errs() << *op0 << "\n";
+            if (I.getCalledFunction() && (I.getCalledFunction()->getName() == "printf" || 
+                        I.getCalledFunction()->getName() == "fprintf")) {
+                int argoff = 0;
+                if (I.getCalledFunction()->getName() == "fprintf")
+                    argoff = 1;
+                Value * op0 = I.getArgOperand(argoff)->stripPointerCasts();
+                errs() << I << "\n";
 
 
                 if (isa<GlobalVariable>(op0) && isa<Constant>(op0)) {
                     GlobalVariable * g = dyn_cast<GlobalVariable>(op0);
                     StringRef val = dyn_cast<ConstantDataSequential>(g->getInitializer())->getAsCString();
+                    errs() << val << "\n";
 
 
                     bool found = false;
-                    User::op_iterator opiter = I.op_begin()+1;
+                    User::op_iterator opiter = I.op_begin()+1+argoff;
 
                     IRBuilder<> builder(&I);
 
@@ -166,6 +175,8 @@ namespace {
                         //errs() << s0 << " : " << s1 << " : " << val << "\n";
 
                         std::vector<Value*> args0;
+                        if (argoff==1)
+                            args0.push_back(I.getArgOperand(0));
                         args0.push_back(builder.CreateGlobalStringPtr(s0));
 
                         if (s0.size()>0) {
@@ -174,21 +185,26 @@ namespace {
                                     args0.push_back(*(opiter++));
                             }
                             ArrayRef<Value*> args0_a(args0);
-                            CallInst::Create(I.getCalledFunction(), args0_a, "", &I);
+                            errs() << "Made " << *CallInst::Create(I.getCalledFunction(), args0_a, "", &I) << "\n";
                         }
                         std::vector<Value*> args1;
+                        if (argoff==1)
+                            args1.push_back(I.getArgOperand(0));
                         args1.push_back(*(opiter++));
                         ArrayRef<Value*> args1_a(args1);
-                        CallInst::Create(I.getCalledFunction(), args1_a, "", &I);
+                        errs() << "Made " << *CallInst::Create(I.getCalledFunction(), args1_a, "", &I) << "\n";
                     }
                     // Place the last printf if it needed to be split
                     if (found && val.size()>0) {
                         std::vector<Value*> args;
+                        if (argoff==1)
+                            args.push_back(I.getArgOperand(0));
                         args.push_back(builder.CreateGlobalStringPtr(val));
                         for(; opiter!=I.op_end(); opiter++)
                             args.push_back(*opiter);
                         ArrayRef<Value*> args_a(args);
                         CallInst* last = CallInst::Create(I.getCalledFunction(), args_a, "");
+                        errs() << "Made " << *last << "\n";
                         ReplaceInstWithInst(&I, last);
                     }
                 }
@@ -210,19 +226,19 @@ namespace {
             if (fname == "fgets")
             {
                 Value * op2 = I.getArgOperand(2)->stripPointerCasts();
-                LoadInst * op2inst = dyn_cast<LoadInst>(op2);
-                if (op2inst->getPointerOperand()->stripPointerCasts()->getName() == "stdin")
-                {
-                    Value * new_args[] = {I.getArgOperand(0)};
-                    CallInst * c = CallInst::Create(magma_gets, ArrayRef<Value*>(new_args, 1), "");
-                    ReplaceInstWithInst(&I, c);
+                if (LoadInst * op2inst = dyn_cast<LoadInst>(op2)) {
+                    if (op2inst->getPointerOperand()->stripPointerCasts()->getName() == "stdin")
+                    {
+                        Value * new_args[] = {I.getArgOperand(0)};
+                        CallInst * c = CallInst::Create(magma_gets, ArrayRef<Value*>(new_args, 1), "");
+                        ReplaceInstWithInst(&I, c);
+                    }
                 }
             }
             else if (fname == "read")
             {
                 Value * op0 = I.getArgOperand(0)->stripPointerCasts();
-                errs() << *op0 << "\n";
-                if (dyn_cast<ConstantInt>(op0)->isZero() && 1)
+                if (dyn_cast<ConstantInt>(op0) && dyn_cast<ConstantInt>(op0)->isZero())
                 {
                     Value * new_args[] = {I.getArgOperand(1)};
                     CallInst * c = CallInst::Create(magma_rgets, ArrayRef<Value*>(new_args, 1), "");
@@ -277,27 +293,32 @@ namespace {
 
         bool runOnFunction(Function &F) override {
 
-            FmtPass fmt;
+            
+            
+            //FmtPass fmt;
             //fmt.visit(F);
 
-            MemPermsPass mpp;
+            //MemPermsPass mpp;
             //mpp.visit(F);
 
             GetsPass gets;
             gets.visit(F);
 
-            VolatilePass vol;
+            //VolatilePass vol;
             //vol.visit(F);
 
-            OffByOnePass off;
+            //OffByOnePass off;
             //off.visit(F);
 
             //remove_stack_canary(F);
+            
+            
 
             //NullFreeFinderPass nffp(ID);
+            //errs() << "running\n";
             //nffp.runOnFunction(F);
 
-            BufferSizePass bsp;
+            //BufferSizePass bsp;
             //bsp.visit(F);
 
             return true;
@@ -311,6 +332,7 @@ namespace {
 
         bool runOnModule(Module & M)
         {
+            errs() << "Mname " << M.getName() << "\n";
             Type * int8_type = Type::getInt8PtrTy(M.getContext());
             Type * gets_args[] = {int8_type};
             FunctionType * gets_type = FunctionType::get(int8_type, ArrayRef<Type*>(gets_args, 1), 0);
@@ -323,7 +345,9 @@ namespace {
             magma_strlen = cast<Function>(const_strlen_func);
 
             FunctionType * rgets_type = FunctionType::get(int64_type, ArrayRef<Type*>(gets_args, 1), 0);
-            Constant * const_rgets_func = M.getOrInsertFunction("magma_rgets", rgets_type);
+            StringRef funcName = "magma_rgets"+M.getModuleIdentifier();
+            Constant * const_rgets_func = M.getOrInsertFunction(funcName, rgets_type);
+            //Constant * const_rgets_func = M.getOrInsertFunction("magma_rgets", rgets_type);
             magma_rgets = cast<Function>(const_rgets_func);
 
             Value * rgets_args[] = {&*magma_rgets->arg_begin()};
@@ -334,8 +358,10 @@ namespace {
             Value * gets_len = builder.CreateCall(magma_strlen, ArrayRef<Value*>(rgets_args, 1), "entry");
             builder.CreateRet(gets_len);
 
+            
             Magma fp;
             for (Function & F : M) fp.runOnFunction(F);
+            
 
             return true;
         }
@@ -346,4 +372,11 @@ namespace {
 char Magma::ID = 0;
 char MagmaMod::ID = 0;
 static RegisterPass<MagmaMod> X("magma", "magma pass", false, false);
+
+static void loadPass(const PassManagerBuilder &Builder, legacy::PassManagerBase &PM) {
+      PM.add(new MagmaMod());
+}
+// These constructors add our pass to a list of global extensions.
+static RegisterStandardPasses clangtoolLoader_Ox(PassManagerBuilder::EP_OptimizerLast, loadPass);
+static RegisterStandardPasses clangtoolLoader_O0(PassManagerBuilder::EP_EnabledOnOptLevel0, loadPass);
 
