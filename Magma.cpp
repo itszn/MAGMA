@@ -13,9 +13,9 @@
 using namespace llvm;
 
 namespace {
-    Function * magma_strlen;
-    Function * magma_gets;
-    Function * magma_rgets;
+    Function * magma_strlen = NULL;
+    Function * magma_gets = NULL;
+    Function * magma_rgets = NULL;
 
     struct BufferSizePass: public InstVisitor<BufferSizePass> {
         BufferSizePass() {}
@@ -23,7 +23,7 @@ namespace {
         virtual void visitAlloca(AllocaInst &I) {
             if (ArrayType* at = dyn_cast<ArrayType>(I.getAllocatedType())) {
                 if (at->getNumElements()>1) {
-                    ArrayType* nt = ArrayType::get(at->getElementType() , at->getNumElements()-1);
+                    ArrayType* nt = ArrayType::get(at->getElementType(), (at->getNumElements()*90)/100);
                     I.setAllocatedType(nt);
                 }
             }
@@ -38,7 +38,7 @@ namespace {
                     errs() << *op0 << "\n";
                     errs() << i->getLimitedValue() << "\n";
 
-                    I.setArgOperand(0, ConstantInt::get(op0->getType(),i->getLimitedValue()-1));
+                    I.setArgOperand(0, ConstantInt::get(op0->getType(),(i->getLimitedValue()*90)/100));
                 }
                 
             }
@@ -131,6 +131,7 @@ namespace {
 
         virtual void visitCallInst(CallInst &I) {
             if (I.getCalledFunction() && (I.getCalledFunction()->getName() == "mmap" ||
+                    I.getCalledFunction()->getName() == "__mmap" ||
                     I.getCalledFunction()->getName() == "mprotect")) {
                 Value* op2 = I.getArgOperand(2);
                 if (isa<ConstantInt>(op2)) {
@@ -151,13 +152,13 @@ namespace {
                 if (I.getCalledFunction()->getName() == "fprintf")
                     argoff = 1;
                 Value * op0 = I.getArgOperand(argoff)->stripPointerCasts();
-                errs() << I << "\n";
+                //errs() << I << "\n";
 
 
                 if (isa<GlobalVariable>(op0) && isa<Constant>(op0)) {
                     GlobalVariable * g = dyn_cast<GlobalVariable>(op0);
                     StringRef val = dyn_cast<ConstantDataSequential>(g->getInitializer())->getAsCString();
-                    errs() << val << "\n";
+                    //errs() << val << "\n";
 
 
                     bool found = false;
@@ -185,14 +186,14 @@ namespace {
                                     args0.push_back(*(opiter++));
                             }
                             ArrayRef<Value*> args0_a(args0);
-                            errs() << "Made " << *CallInst::Create(I.getCalledFunction(), args0_a, "", &I) << "\n";
+                            CallInst::Create(I.getCalledFunction(), args0_a, "", &I);
                         }
                         std::vector<Value*> args1;
                         if (argoff==1)
                             args1.push_back(I.getArgOperand(0));
                         args1.push_back(*(opiter++));
                         ArrayRef<Value*> args1_a(args1);
-                        errs() << "Made " << *CallInst::Create(I.getCalledFunction(), args1_a, "", &I) << "\n";
+                        CallInst::Create(I.getCalledFunction(), args1_a, "", &I);
                     }
                     // Place the last printf if it needed to be split
                     if (found && val.size()>0) {
@@ -204,7 +205,6 @@ namespace {
                             args.push_back(*opiter);
                         ArrayRef<Value*> args_a(args);
                         CallInst* last = CallInst::Create(I.getCalledFunction(), args_a, "");
-                        errs() << "Made " << *last << "\n";
                         ReplaceInstWithInst(&I, last);
                     }
                 }
@@ -241,6 +241,27 @@ namespace {
                 if (dyn_cast<ConstantInt>(op0) && dyn_cast<ConstantInt>(op0)->isZero())
                 {
                     Value * new_args[] = {I.getArgOperand(1)};
+                    if (magma_rgets==NULL) {
+                        Module& M = *I.getModule();
+
+                        Type * int8_type = Type::getInt8PtrTy(M.getContext());
+                        Type * gets_args[] = {int8_type};
+                        Type * int64_type = Type::getInt64Ty(M.getContext());
+
+                        FunctionType * rgets_type = FunctionType::get(int64_type, ArrayRef<Type*>(gets_args, 1), 0);
+                        StringRef funcName = "magma_rgets"+M.getModuleIdentifier();
+                        Constant * const_rgets_func = M.getOrInsertFunction(funcName, rgets_type);
+                        //Constant * const_rgets_func = M.getOrInsertFunction("magma_rgets", rgets_type);
+                        magma_rgets = cast<Function>(const_rgets_func);
+
+                        Value * rgets_args[] = {&*magma_rgets->arg_begin()};
+
+                        BasicBlock * bb = BasicBlock::Create(M.getContext(), "entry", magma_rgets);
+                        IRBuilder<> builder(bb);
+                        builder.CreateCall(magma_gets, ArrayRef<Value*>(rgets_args, 1), "entry");
+                        Value * gets_len = builder.CreateCall(magma_strlen, ArrayRef<Value*>(rgets_args, 1), "entry");
+                        builder.CreateRet(gets_len);
+                    }
                     CallInst * c = CallInst::Create(magma_rgets, ArrayRef<Value*>(new_args, 1), "");
                     ReplaceInstWithInst(&I, c);
                 }
@@ -295,31 +316,31 @@ namespace {
 
             
             
-            //FmtPass fmt;
-            //fmt.visit(F);
+            FmtPass fmt;
+            fmt.visit(F);
 
-            //MemPermsPass mpp;
-            //mpp.visit(F);
+            MemPermsPass mpp;
+            mpp.visit(F);
 
             GetsPass gets;
             gets.visit(F);
 
-            //VolatilePass vol;
-            //vol.visit(F);
+            VolatilePass vol;
+            vol.visit(F);
 
-            //OffByOnePass off;
+            OffByOnePass off;
             //off.visit(F);
 
-            //remove_stack_canary(F);
+            remove_stack_canary(F);
             
             
 
-            //NullFreeFinderPass nffp(ID);
+            NullFreeFinderPass nffp(ID);
             //errs() << "running\n";
-            //nffp.runOnFunction(F);
+            nffp.runOnFunction(F);
 
-            //BufferSizePass bsp;
-            //bsp.visit(F);
+            BufferSizePass bsp;
+            bsp.visit(F);
 
             return true;
         }
@@ -344,19 +365,6 @@ namespace {
             Constant * const_strlen_func = M.getOrInsertFunction("strlen", strlen_type);
             magma_strlen = cast<Function>(const_strlen_func);
 
-            FunctionType * rgets_type = FunctionType::get(int64_type, ArrayRef<Type*>(gets_args, 1), 0);
-            StringRef funcName = "magma_rgets"+M.getModuleIdentifier();
-            Constant * const_rgets_func = M.getOrInsertFunction(funcName, rgets_type);
-            //Constant * const_rgets_func = M.getOrInsertFunction("magma_rgets", rgets_type);
-            magma_rgets = cast<Function>(const_rgets_func);
-
-            Value * rgets_args[] = {&*magma_rgets->arg_begin()};
-
-            BasicBlock * bb = BasicBlock::Create(M.getContext(), "entry", magma_rgets);
-            IRBuilder<> builder(bb);
-            builder.CreateCall(magma_gets, ArrayRef<Value*>(rgets_args, 1), "entry");
-            Value * gets_len = builder.CreateCall(magma_strlen, ArrayRef<Value*>(rgets_args, 1), "entry");
-            builder.CreateRet(gets_len);
 
             
             Magma fp;
