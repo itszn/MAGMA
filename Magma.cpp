@@ -249,9 +249,7 @@ namespace {
                         Type * int64_type = Type::getInt64Ty(M.getContext());
 
                         FunctionType * rgets_type = FunctionType::get(int64_type, ArrayRef<Type*>(gets_args, 1), 0);
-                        StringRef funcName = "magma_rgets"+M.getModuleIdentifier();
-                        Constant * const_rgets_func = M.getOrInsertFunction(funcName, rgets_type);
-                        //Constant * const_rgets_func = M.getOrInsertFunction("magma_rgets", rgets_type);
+                        Constant * const_rgets_func = M.getOrInsertFunction("magma_rgets", rgets_type);
                         magma_rgets = cast<Function>(const_rgets_func);
 
                         Value * rgets_args[] = {&*magma_rgets->arg_begin()};
