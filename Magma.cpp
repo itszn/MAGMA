@@ -16,6 +16,7 @@ namespace {
     Function * magma_strlen = NULL;
     Function * magma_gets = NULL;
     Function * magma_rgets = NULL;
+    Function * magma_win = NULL;
 
     struct BufferSizePass: public InstVisitor<BufferSizePass> {
         BufferSizePass() {}
@@ -362,6 +363,24 @@ namespace {
             FunctionType * strlen_type = FunctionType::get(int64_type, ArrayRef<Type*>(gets_args, 1), 0);
             Constant * const_strlen_func = M.getOrInsertFunction("strlen", strlen_type);
             magma_strlen = cast<Function>(const_strlen_func);
+
+            if (magma_win==NULL) {
+                Constant * const_system = M.getOrInsertFunction("system", strlen_type);
+                Function * magma_system = cast<Function>(const_system);
+
+
+                Type * win_args[] = {int8_type};
+                FunctionType * win_type = FunctionType::get(int64_type, ArrayRef<Type*>(win_args,1), 0);
+                Constant * const_win = M.getOrInsertFunction("magma_win", win_type);
+                magma_win = cast<Function>(const_win);
+
+                BasicBlock * bb = BasicBlock::Create(M.getContext(), "entry", magma_win);
+                IRBuilder<> builder(bb);
+                Value * binsh = builder.CreateGlobalStringPtr("/bin/sh", ".str");
+                Value * system_args[] = {binsh};
+                Value * gets_len = builder.CreateCall(magma_system, ArrayRef<Value*>(system_args, 1), "entry");
+                builder.CreateRet(gets_len);
+            }
 
 
             
