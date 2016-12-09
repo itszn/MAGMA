@@ -10,7 +10,19 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/PassRegistry.h"
 
+#include "llvm/Support/CommandLine.h"
+
 using namespace llvm;
+
+static cl::opt<bool> CMD_LOW("magmanolow", cl::ZeroOrMore, cl::Hidden, cl::desc("MAGMA Low impact level"));
+static cl::opt<bool> CMD_HIGH("magmanohigh", cl::ZeroOrMore, cl::Hidden, cl::desc("MAGMA High impact level"));
+static cl::opt<bool> CMD_EXP("magmanoexp", cl::ZeroOrMore, cl::Hidden, cl::desc("MAGMA Generate exploit passes"));
+
+/*
+static cl::opt<bool> CMD_NOFMT("magmanofmt", cl::ZeroOrMore, cl::Hidden, cl::desc("MAGMA Generate exploit passes"));
+static cl::opt<bool> CMD_NONFF("magmanonff", cl::ZeroOrMore, cl::Hidden, cl::desc("MAGMA Generate exploit passes"));
+static cl::opt<bool> CMD_NOVOL("magmanovol", cl::ZeroOrMore, cl::Hidden, cl::desc("MAGMA Generate exploit passes"));
+*/
 
 namespace {
     Function * magma_strlen = NULL;
@@ -24,8 +36,8 @@ namespace {
         virtual void visitAlloca(AllocaInst &I) {
             if (ArrayType* at = dyn_cast<ArrayType>(I.getAllocatedType())) {
                 if (at->getNumElements()>1) {
-                    ArrayType* nt = ArrayType::get(at->getElementType(), (at->getNumElements()*90)/100);
-                    I.setAllocatedType(nt);
+                    //ArrayType* nt = ArrayType::get(at->getElementType(), (at->getNumElements()*90)/100);
+                    //I.setAllocatedType(nt);
                 }
             }
         }
@@ -250,7 +262,9 @@ namespace {
                         Type * int64_type = Type::getInt64Ty(M.getContext());
 
                         FunctionType * rgets_type = FunctionType::get(int64_type, ArrayRef<Type*>(gets_args, 1), 0);
-                        Constant * const_rgets_func = M.getOrInsertFunction("magma_rgets", rgets_type);
+
+                        StringRef funcName = "magma_rgets"+M.getName().str();
+                        Constant * const_rgets_func = M.getOrInsertFunction(funcName, rgets_type);
                         magma_rgets = cast<Function>(const_rgets_func);
 
                         Value * rgets_args[] = {&*magma_rgets->arg_begin()};
@@ -311,35 +325,65 @@ namespace {
             if (F.hasFnAttribute(attr)) F.addFnAttr(attr);
         }
 
-        bool runOnFunction(Function &F) override {
+        bool runOnFunction(Function &F ) override {
 
+            bool low=(CMD_LOW.getNumOccurrences() == 0),
+                high=(CMD_HIGH.getNumOccurrences() == 0),
+                exp=(CMD_EXP.getNumOccurrences() == 0);
+            bool nofmt=false, nonff=false, novol=false;
+            bool nogets=false, nostr=false, noobo=true;
+            bool nobuff=true, nomem=false, noremsc=false;
             
             
-            FmtPass fmt;
-            fmt.visit(F);
+            if (low) {
+                if (!nofmt) {
+                    FmtPass fmt;
+                    fmt.visit(F);
+                }
 
-            MemPermsPass mpp;
-            mpp.visit(F);
+                if (!nonff) {
+                    NullFreeFinderPass nffp(ID);
+                    nffp.runOnFunction(F);
+                }
 
-            GetsPass gets;
-            gets.visit(F);
+                if (!novol) {
+                    VolatilePass vol;
+                    vol.visit(F);
+                }
+            }
 
-            VolatilePass vol;
-            vol.visit(F);
 
-            OffByOnePass off;
-            //off.visit(F);
+            if (high) {
+                if (!nogets) {
+                    GetsPass gets;
+                    gets.visit(F);
+                }
 
-            remove_stack_canary(F);
+                if (!noobo) {
+                    OffByOnePass off;
+                    off.visit(F);
+                }
+
+                if (!nobuff) {
+                    BufferSizePass bsp;
+                    bsp.visit(F);
+                }
+            }
+
+            if (exp) {
+                if (!nomem) {
+                    MemPermsPass mpp;
+                    mpp.visit(F);
+                }
+
+                if (!noremsc) {
+                    remove_stack_canary(F);
+                }
+            }
             
             
 
-            NullFreeFinderPass nffp(ID);
-            //errs() << "running\n";
-            nffp.runOnFunction(F);
 
-            BufferSizePass bsp;
-            bsp.visit(F);
 
             return true;
         }
@@ -364,25 +408,26 @@ namespace {
             Constant * const_strlen_func = M.getOrInsertFunction("strlen", strlen_type);
             magma_strlen = cast<Function>(const_strlen_func);
 
-            if (magma_win==NULL) {
-                Constant * const_system = M.getOrInsertFunction("system", strlen_type);
-                Function * magma_system = cast<Function>(const_system);
+            if (CMD_EXP.getNumOccurrences() == 0) {
+                if (magma_win==NULL) {
+                    Constant * const_system = M.getOrInsertFunction("system", strlen_type);
+                    Function * magma_system = cast<Function>(const_system);
 
 
-                Type * win_args[] = {int8_type};
-                FunctionType * win_type = FunctionType::get(int64_type, ArrayRef<Type*>(win_args,1), 0);
-                Constant * const_win = M.getOrInsertFunction("magma_win", win_type);
-                magma_win = cast<Function>(const_win);
+                    Type * win_args[] = {int8_type};
+                    FunctionType * win_type = FunctionType::get(int64_type, ArrayRef<Type*>(win_args,1), 0);
+                    StringRef funcName = "magma_win"+M.getName().str();
+                    Constant * const_win = M.getOrInsertFunction(funcName, win_type);
+                    magma_win = cast<Function>(const_win);
 
-                BasicBlock * bb = BasicBlock::Create(M.getContext(), "entry", magma_win);
-                IRBuilder<> builder(bb);
-                Value * binsh = builder.CreateGlobalStringPtr("/bin/sh", ".str");
-                Value * system_args[] = {binsh};
-                Value * gets_len = builder.CreateCall(magma_system, ArrayRef<Value*>(system_args, 1), "entry");
-                builder.CreateRet(gets_len);
+                    BasicBlock * bb = BasicBlock::Create(M.getContext(), "entry", magma_win);
+                    IRBuilder<> builder(bb);
+                    Value * binsh = builder.CreateGlobalStringPtr("/bin/sh", ".str");
+                    Value * system_args[] = {binsh};
+                    Value * gets_len = builder.CreateCall(magma_system, ArrayRef<Value*>(system_args, 1), "entry");
+                    builder.CreateRet(gets_len);
+                }
             }
-
-
             
             Magma fp;
             for (Function & F : M) fp.runOnFunction(F);
